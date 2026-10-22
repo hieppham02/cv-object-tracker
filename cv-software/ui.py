@@ -3,8 +3,9 @@ import customtkinter as ctk
 
 import cv2
 from PIL import Image
+from serial.tools import list_ports
 
-from human_detection import HumanDetector
+from human_detection import FaceDetector, SERIAL_PORT
 
 
 CAMERA_INDEX = 0
@@ -17,10 +18,10 @@ DEFAULT_DEAD_ZONE = 30
 DEFAULT_ERROR_ALPHA = 0.2
 DEFAULT_MAX_STEP = 3
 DEFAULT_CONTROL_INTERVAL = 0.1
+NO_SERIAL_PORT = "Không tìm thấy cổng COM"
 
 
 class TrackingApp:
-    """Manage the GUI, camera, and human detector."""
 
     def __init__(self, window: ctk.CTk) -> None:
         self.window = window
@@ -28,14 +29,14 @@ class TrackingApp:
         self.detector = None
         self.is_running = False
         self.camera_index = CAMERA_INDEX
+        self.serial_ports = sorted(port.device for port in list_ports.comports())
 
-        self.window.title("Human Tracking")
+        self.window.title("Face Tracking")
         self.window.configure(fg_color="#F1F5F9")
         self.font = ctk.CTkFont(family="Segoe UI", size=13)
         self.button_font = ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
         self.window.protocol("WM_DELETE_WINDOW", self.close)
 
-        # The container fixes the layout in pixels. The label cannot resize it.
         self.video_container = ctk.CTkFrame(
             self.window,
             width=VIDEO_WIDTH,
@@ -85,6 +86,34 @@ class TrackingApp:
         )
         self.change_camera_button.pack(side="left")
 
+        self.serial_panel = ctk.CTkFrame(self.window, fg_color="transparent")
+        self.serial_panel.pack(pady=(0, 8))
+        ctk.CTkLabel(
+            self.serial_panel,
+            text="Cổng serial",
+            font=self.font,
+            text_color="#475569",
+        ).pack(side="left", padx=(0, 8))
+
+        selected_port = (
+            SERIAL_PORT
+            if SERIAL_PORT in self.serial_ports
+            else self.serial_ports[0] if self.serial_ports else NO_SERIAL_PORT
+        )
+        self.serial_port = tk.StringVar(value=selected_port)
+        self.serial_combobox = ctk.CTkComboBox(
+            self.serial_panel,
+            values=self.serial_ports or [NO_SERIAL_PORT],
+            variable=self.serial_port,
+            width=180,
+            height=32,
+            font=self.font,
+            dropdown_font=self.font,
+            state="readonly" if self.serial_ports else "disabled",
+            command=self.change_serial_port,
+        )
+        self.serial_combobox.pack(side="left")
+
         self.control_panel = ctk.CTkFrame(
             self.window,
             fg_color="white",
@@ -110,14 +139,12 @@ class TrackingApp:
         self._create_slider("MAX_STEP", self.max_step, 1, 10, 1)
         self._create_slider("DEFAULT_CONTROL_INTERVAL", self.control_interval, 0.0, 1, 0.1)
 
-        # Let Tk calculate the height from widget requests, including DPI scaling.
         self.window.update_idletasks()
         self.window.tk.call("wm", "geometry", self.window._w, "")
         self.window.resizable(False, False)
         self._center_window()
 
     def _center_window(self) -> None:
-        """Place the fully sized window at the center of the active screen."""
         window_width = self.window.winfo_reqwidth()
         window_height = self.window.winfo_reqheight()
         screen_width = self.window.winfo_screenwidth()
@@ -126,8 +153,15 @@ class TrackingApp:
         position_y = max(0, (screen_height - window_height) // 2)
         self.window.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
 
+    def _selected_serial_port(self) -> str | None:
+        selected_port = self.serial_port.get()
+        return selected_port if selected_port in self.serial_ports else None
+
+    def change_serial_port(self, selected_port: str) -> None:
+        if self.detector is not None:
+            self.detector.set_serial_port(selected_port)
+
     def _create_slider(self, label, variable, minimum, maximum, resolution) -> None:
-        """Create one live controller tuning slider."""
         row = ctk.CTkFrame(self.control_panel, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=(0, 4))
         ctk.CTkLabel(row, text=label.replace("DEFAULT_", ""), width=200,
@@ -158,7 +192,6 @@ class TrackingApp:
         ).pack(side="left", fill="x", expand=True, padx=8)
 
     def _update_control_parameters(self, _value=None) -> None:
-        """Send slider values to the detector when it has been initialized."""
         if self.detector is not None:
             self.detector.update_control_parameters(
                 proportional_gain=self.proportional_gain.get(),
@@ -168,14 +201,13 @@ class TrackingApp:
             )
 
     def start_tracking(self) -> None:
-        """Initialize the detector and selected camera."""
         if self.is_running:
             return
 
         self.video_panel.configure(text="Đang tải mô hình...", image=None)
         self.window.update_idletasks()
         if self.detector is None:
-            self.detector = HumanDetector()
+            self.detector = FaceDetector(self._selected_serial_port())
         self._update_control_parameters()
         self.camera = cv2.VideoCapture(self.camera_index)
 
@@ -190,7 +222,6 @@ class TrackingApp:
         self.update_video()
 
     def change_camera(self) -> None:
-        """Toggle the active video capture between camera 0 and camera 2."""
         if not self.is_running:
             return
 
@@ -212,7 +243,6 @@ class TrackingApp:
         self.change_camera_button.configure(text=f"Camera {next_index}")
 
     def update_video(self) -> None:
-        """Read, process, resize, and render the next frame."""
         if not self.is_running or self.camera is None:
             return
 
@@ -222,6 +252,7 @@ class TrackingApp:
             self.stop_tracking()
             return
 
+        frame = cv2.flip(frame, 1)
         processed_frame = self.detector.process_frame(frame)
         display_frame = cv2.resize(
             processed_frame,
@@ -237,7 +268,6 @@ class TrackingApp:
         self.window.after(FRAME_DELAY_MS, self.update_video)
 
     def stop_tracking(self) -> None:
-        """Release the camera and restore the start button."""
         self.is_running = False
         if self.camera is not None:
             self.camera.release()
@@ -245,7 +275,6 @@ class TrackingApp:
         self.start_button.configure(state="normal", text="Tracking")
 
     def close(self) -> None:
-        """Release resources before closing the application."""
         self.stop_tracking()
         if self.detector is not None:
             self.detector.close()
@@ -253,7 +282,6 @@ class TrackingApp:
 
 
 def main() -> None:
-    """Start the GUI application."""
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
     window = ctk.CTk()
