@@ -55,15 +55,16 @@ Phần dưới đây là logic dự kiến triển khai; hiện chưa có firmwa
 - **Chế độ thủ công:** đọc ADC từ hai trục joystick, áp dụng vùng chết quanh vị trí trung tâm và chuyển độ lệch thành thay đổi góc servo.
 - **Chuyển chế độ:** firmware cần quy định cách chuyển giữa điều khiển bằng joystick và bằng UART, tránh hai nguồn lệnh cùng tác động đến servo.
 
-## 5. Hình ảnh và video demo
+## 5. Hình ảnh demo
 
 ### Demo hệ thống
 
-![Demo](./image/demo.gif)
+![Demo](./python-software/image/demo.gif)
 
 ### Mạch điều khiển và khung camera
 
-![Mạch STM32 và khung pan-tilt](./image/img.jpg)
+![Mạch STM32 và khung pan-tilt](./python-software/image/img.png)
 
 ## 6. Lưu ý về bản quyền
+
 - ** Dự án được thực hiện nhằm mục đích học tập và nghiên cứu, không sử dụng cho mục đích thương mại. Quyền sở hữu và điều khoản cấp phép của các thư viện, mô hình và tài nguyên bên thứ ba vẫn thuộc về tác giả hoặc đơn vị cung cấp tương ứng. ** -
